@@ -1,0 +1,72 @@
+# builds the app for linux (x86_64 + arm64/jetson) and windows
+# runs on version tags (v1.0.0 ...) or by hand from the Actions tab
+name: build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: MapMerger-linux-x86_64
+          - os: ubuntu-22.04-arm
+            name: MapMerger-linux-arm64
+          - os: windows-latest
+            name: MapMerger-windows-x64
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: system libs (so they get bundled)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxcb-cursor0 libegl1 libxkbcommon-x11-0
+
+      - name: tests
+        shell: bash
+        run: |
+          pip install .[dev]
+          pytest -q
+
+      - name: build
+        shell: bash
+        run: bash packaging/build.sh
+
+      - name: smoke test
+        if: runner.os == 'Linux'
+        run: |
+          QT_QPA_PLATFORM=offscreen timeout 10 ./dist/MapMerger examples/my_map.yaml examples/my_map_2.yaml || [ $? -eq 124 ]
+
+      - name: package (linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p out/${{ matrix.name }}
+          cp dist/MapMerger LICENSE out/${{ matrix.name }}/
+          cp -r examples out/${{ matrix.name }}/
+          cd out && tar czf ${{ matrix.name }}.tar.gz ${{ matrix.name }}
+
+      - name: package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out/${{ matrix.name }} | Out-Null
+          Copy-Item dist/MapMerger.exe, LICENSE out/${{ matrix.name }}/
+          Copy-Item -Recurse examples out/${{ matrix.name }}/
+          Compress-Archive -Path out/${{ matrix.name }} -DestinationPath out/${{ matrix.name }}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            out/*.tar.gz
+            out/*.zip

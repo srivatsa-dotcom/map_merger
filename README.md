@@ -158,6 +158,20 @@ Raise *Clear radius* (or `--radius`), or turn off *Open walls another map sees t
 Turn on *Refine drift*. If the note under Result says the correction was rejected, the drift is
 larger than this tool is meant to fix. Check that the maps really started from the same point.
 
+## Building the app
+
+`bash packaging/build.sh` builds a single-file app into `dist/` with PyInstaller.
+Build on the oldest Ubuntu you want to support (a build made on 24.04 will not start on 22.04).
+
+The GitHub Actions workflow in `.github/workflows/build.yml` does this on Ubuntu 22.04
+(x86_64 and arm64 for Jetson) and Windows. It runs when you push a tag like `v1.0.0`, or by
+hand from the Actions tab. The finished apps are under the run's *Artifacts*.
+
+## License
+
+Proprietary freeware, see [LICENSE](LICENSE). The app is free to use; the source code is not
+public and may not be copied or redistributed.
+
 ## Project layout
 
 ```
@@ -168,6 +182,7 @@ map_merger/
 examples/      two sample maps to try it with
 tests/         pytest tests for the merge logic
 docs/          screenshots
+packaging/     pyinstaller entry point and build script
 ```
 
 Run the tests with `pip install pytest && pytest`.
