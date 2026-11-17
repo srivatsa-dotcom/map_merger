@@ -8,6 +8,6 @@ venv/
 .pytest_cache/
 
 # outputs from running the tool
-merged_map*.pgm
-merged_map*.yaml
-*_overlay.png
+/merged_map*.pgm
+/merged_map*.yaml
+/*_overlay.png
