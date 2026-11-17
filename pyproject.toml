@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "map-merger"
+version = "1.0.0"
+description = "Merge ROS occupancy grid maps (pgm + yaml) that were built from the same start point"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "opencv-python-headless",
+    "pyyaml",
+    "PySide6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+map-merge = "map_merger.cli:main"
+
+[project.gui-scripts]
+map-merger = "map_merger.gui:main"
+
+[tool.setuptools]
+packages = ["map_merger"]
