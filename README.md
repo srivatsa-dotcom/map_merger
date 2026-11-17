@@ -1,11 +1,16 @@
 # Map Merger
 
-Desktop app (and command line tool) to merge ROS occupancy grid maps into one map.
+Web app, desktop app and command line tool to merge ROS occupancy grid maps into one map.
 
 If you mapped the same place in several runs, each starting from the **same point**, the maps
 already share one world frame. Map Merger places each map using the `origin` and `resolution`
 from its YAML, combines them cell by cell, and saves a normal `.pgm` + `.yaml` that
 `map_server` / nav2 can load directly.
+
+**Use it in the browser:** https://srivatsa-dotcom.github.io/map_merger/
+
+Nothing to install. The web version runs entirely in your browser: maps are never uploaded
+anywhere. For offline use or scripting, install the desktop app / command line tool below.
 
 ![Merged view](docs/screenshot_merged.png)
 
@@ -25,6 +30,37 @@ from its YAML, combines them cell by cell, and saves a normal `.pgm` + `.yaml` t
 
 *Overlay view: red = `my_map`, blue = `my_map_2`, dark = walls both maps agree on,
 green = wall from one map that was opened because the other map saw through it.*
+
+## Web version
+
+Open https://srivatsa-dotcom.github.io/map_merger/, then:
+
+1. Click **Add maps…** and select each map's `.yaml` **together with** its `.pgm` (or `.png`)
+   image. You can select all the files at once, or drag them onto the page. A map whose image
+   is missing is shown in red until you add it.
+2. Check the **Merged** and **Overlay** views, and change options as needed (same options as
+   the desktop app, see below).
+3. Type an output name and click **Download merged map**. You get `NAME.pgm` and `NAME.yaml`.
+   If the browser asks whether to allow multiple downloads, allow it.
+
+**Try example maps** loads the two maps from `examples/` so you can see how it works.
+
+The web version gives exactly the same merged map as the desktop app and the command line tool
+(a test checks this byte for byte). The one difference is *Refine drift*: the web version tries
+every shift up to 0.5 m and rotation up to 3° around the start point and keeps the best one,
+while the desktop app uses OpenCV ECC.
+
+### Turning on the website (GitHub Pages)
+
+The site is the `docs/` folder of this repo. To turn it on:
+
+1. On GitHub open **Settings → Pages**.
+2. Under *Build and deployment*, set **Source** to *Deploy from a branch*.
+3. Pick branch **main** and folder **/docs**, then **Save**.
+4. After a minute or two the site is live at `https://<user>.github.io/<repo>/`.
+
+To try it locally without GitHub: `cd docs && python3 -m http.server 8000`, then open
+http://localhost:8000.
 
 ## Install
 
@@ -167,11 +203,6 @@ The GitHub Actions workflow in `.github/workflows/build.yml` does this on Ubuntu
 (x86_64 and arm64 for Jetson) and Windows. It runs when you push a tag like `v1.0.0`, or by
 hand from the Actions tab. The finished apps are under the run's *Artifacts*.
 
-## License
-
-Proprietary freeware, see [LICENSE](LICENSE). The app is free to use; the source code is not
-public and may not be copied or redistributed.
-
 ## Project layout
 
 ```
@@ -179,10 +210,14 @@ map_merger/
   core.py      merge logic (load, place, refine, combine, save)
   gui.py       desktop app (PySide6)
   cli.py       command line tool
+docs/
+  index.html   web version (served by GitHub Pages)
+  merge.js     merge logic for the web version, same steps as core.py
+  examples/    copy of the example maps for "Try example maps"
 examples/      two sample maps to try it with
-tests/         pytest tests for the merge logic
-docs/          screenshots
+tests/         pytest tests (merge logic, and web vs python output)
 packaging/     pyinstaller entry point and build script
 ```
 
-Run the tests with `pip install pytest && pytest`.
+Run the tests with `pip install pytest && pytest`. The web parity test needs `node` and is
+skipped without it.

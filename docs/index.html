@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map Merger</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%233d7bfd%22/%3E%3Cpath d=%22M3 3h4v4H3zM9 9h4v4H9z%22 fill=%22%23fff%22/%3E%3C/svg%3E">
+<meta name="description" content="Merge ROS occupancy grid maps (pgm + yaml) in the browser">
+<style>
+  :root {
+    --bg: #14161b; --side: #1b1e24; --line: #262a32; --line2: #2f3440;
+    --text: #e6e8ec; --muted: #8b93a1; --btn: #242832; --btn-h: #2b303b;
+    --accent: #3d7bfd; --accent-h: #5a8ffd; --canvas: #0f1115; --danger: #f87171;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 13px/1.4 Inter, "Segoe UI", Ubuntu, system-ui, sans-serif;
+    display: flex; overflow: hidden;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, "DejaVu Sans Mono", monospace; font-size: 12px; }
+
+  /* sidebar */
+  aside {
+    width: 330px; flex: none; background: var(--side); border-right: 1px solid var(--line);
+    padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0; }
+  .sub { color: var(--muted); font-size: 12px; margin: -4px 0 0; }
+  .section { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 1px; margin-top: 6px; }
+
+  #list {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 4px;
+    min-height: 120px; max-height: 240px; overflow-y: auto; list-style: none; margin: 0;
+  }
+  #list li {
+    display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 6px; cursor: pointer;
+  }
+  #list li:hover { background: #1f232b; }
+  #list li.sel { background: #26324a; }
+  #list li .meta { color: var(--muted); font-size: 12px; }
+  #list li.missing .meta { color: var(--danger); }
+  #list .empty { color: var(--muted); font-size: 12px; padding: 50px 10px; text-align: center; cursor: default; }
+  #list .empty:hover { background: none; }
+  .chip { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+  .btn {
+    background: var(--btn); border: 1px solid var(--line2); border-radius: 7px; padding: 7px 12px;
+  }
+  .btn:hover { background: var(--btn-h); }
+  .btn:active { background: #20242c; }
+  .btn:disabled { color: #5c6370; background: #1e2128; border-color: var(--line); cursor: default; }
+  .btn.icon { padding: 7px 10px; min-width: 36px; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); font-weight: 600; padding: 9px 12px; }
+  .btn.primary:hover { background: var(--accent-h); }
+  .btn.primary:disabled { background: #233457; border-color: #233457; color: #7f8aa3; }
+  .row { display: flex; gap: 6px; }
+  .row .grow { flex: 1; }
+
+  label.check { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+  label.check input { appearance: none; width: 16px; height: 16px; margin: 0; border-radius: 4px;
+    border: 1px solid #3a404d; background: var(--bg); cursor: pointer; display: grid; place-content: center; }
+  label.check input:checked { background: var(--accent); border-color: var(--accent); }
+  label.check input:checked::after { content: ""; width: 8px; height: 4px; border: 2px solid #fff;
+    border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px); }
+  label.check input:disabled + span { color: #5c6370; }
+
+  .field { display: grid; grid-template-columns: 1fr 140px; align-items: center; gap: 8px 10px; }
+  .field span { color: var(--muted); }
+  .field input {
+    background: var(--bg); border: 1px solid var(--line2); border-radius: 6px; color: var(--text);
+    padding: 5px 8px; font: inherit; width: 100%;
+  }
+  .field input:focus { outline: none; border-color: var(--accent); }
+  .field input:disabled { color: #5c6370; }
+
+  .card { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px;
+    display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; }
+  .card span:nth-child(odd) { color: var(--muted); }
+  .card span:nth-child(even) { text-align: right; }
+  .notes { color: var(--muted); font-size: 12px; white-space: pre-line; }
+
+  .spacer { flex: 1; }
+  .savebox { display: flex; flex-direction: column; gap: 8px; }
+  .foot { color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; }
+  .foot a { color: var(--muted); }
+
+  /* main */
+  main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .top { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .seg { display: flex; }
+  .seg button { background: var(--side); border: 1px solid var(--line2); padding: 6px 14px; }
+  .seg button:first-child { border-radius: 7px 0 0 7px; }
+  .seg button:last-child { border-radius: 0 7px 7px 0; border-left: 0; }
+  .seg button.on { background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  #legend { display: flex; gap: 12px; flex-wrap: wrap; }
+  #legend div { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
+  .zoom { margin-left: auto; display: flex; gap: 6px; }
+
+  #stage { flex: 1; position: relative; background: var(--canvas); overflow: hidden; }
+  #view { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; display: none; }
+  #view.drag { cursor: grabbing; }
+  #empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 8px; text-align: center; padding: 20px; }
+  #empty h2 { font-size: 17px; margin: 0; }
+  #empty p { color: var(--muted); margin: 0 0 10px; }
+  #empty .row { gap: 10px; }
+  #drop { position: absolute; inset: 12px; border: 2px dashed var(--accent); border-radius: 12px;
+    background: rgba(61, 123, 253, .08); display: none; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 600; pointer-events: none; }
+  body.dragging #drop { display: flex; }
+
+  .status { display: flex; justify-content: space-between; gap: 10px; padding: 6px 14px;
+    border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+
+  #toast { position: fixed; left: 50%; bottom: 46px; transform: translateX(-50%); background: #242832;
+    border: 1px solid var(--line2); border-radius: 8px; padding: 9px 14px; display: none; max-width: 520px; }
+  #toast.err { border-color: #7f1d1d; color: #fecaca; }
+
+  @media (max-width: 800px) {
+    body { flex-direction: column; overflow: auto; }
+    aside { width: 100%; border-right: 0; border-bottom: 1px solid var(--line); }
+    main { min-height: 70vh; }
+  }
+</style>
+</head>
+<body>
+
+<aside>
+  <h1>Map Merger</h1>
+  <p class="sub">Combine occupancy maps that started from the same point. Runs in your browser, nothing is uploaded.</p>
+
+  <div class="section">MAPS</div>
+  <ul id="list"></ul>
+  <div class="row">
+    <button class="btn grow" id="addBtn" title="Pick the .yaml files and their .pgm/.png images">Add maps…</button>
+    <button class="btn icon" id="upBtn" title="Move up. The first map is the reference for drift refine.">↑</button>
+    <button class="btn icon" id="downBtn" title="Move down">↓</button>
+    <button class="btn icon" id="delBtn" title="Remove selected map">✕</button>
+  </div>
+  <input type="file" id="fileIn" multiple accept=".yaml,.yml,.pgm,.png,.jpg,.jpeg,.bmp" hidden>
+
+  <div class="section">OPTIONS</div>
+  <label class="check" title="If one run saw a wall (e.g. a closed door) and another run clearly saw open space there, the cell becomes free.">
+    <input type="checkbox" id="optOpen" checked><span>Open walls another map sees through</span></label>
+  <label class="check" title="Search small shifts/rotations (up to 0.5 m and 3°) around the start point. Only turn on if the overlay shows walls that don't line up.">
+    <input type="checkbox" id="optRefine"><span>Refine drift against first map</span></label>
+  <div class="field">
+    <span>Resolution</span><input id="optRes" type="text" placeholder="Auto" title="Output cell size in metres. Empty = finest input map.">
+    <span>Clear radius</span><input id="optRadius" type="number" min="0" max="20" value="3" title="Cells a map must be from its own wall before it can clear another map's wall. Raise it if real walls get erased.">
+  </div>
+
+  <div class="section">RESULT</div>
+  <div class="card mono" id="stats"></div>
+  <div class="notes" id="notes"></div>
+
+  <div class="spacer"></div>
+  <div class="savebox">
+    <div class="field"><span>Output name</span><input id="outName" type="text" value="merged_map"></div>
+    <button class="btn primary" id="saveBtn" title="Downloads NAME.pgm and NAME.yaml for map_server / nav2">Download merged map</button>
+  </div>
+  <div class="foot"><span>Web version</span><a href="https://github.com/srivatsa-dotcom/map_merger">GitHub</a></div>
+</aside>
+
+<main>
+  <div class="top">
+    <div class="seg">
+      <button id="mMerged" class="on" title="The map that will be saved">Merged</button>
+      <button id="mOverlay" title="Each map's walls in its own colour, to check alignment">Overlay</button>
+    </div>
+    <div id="legend"></div>
+    <div class="zoom">
+      <button class="btn icon" id="zOut" title="Zoom out">−</button>
+      <button class="btn icon" id="zIn" title="Zoom in">+</button>
+      <button class="btn" id="zFit" title="Fit map to window">Fit</button>
+    </div>
+  </div>
+  <div id="stage">
+    <canvas id="view"></canvas>
+    <div id="empty">
+      <h2>Add at least two maps to start</h2>
+      <p>Select each map's <b>.yaml</b> together with its <b>.pgm</b> (or .png) image, or drag them here.<br>
+         The merged map updates as you change options.</p>
+      <div class="row">
+        <button class="btn primary" id="addBtn2">Add maps…</button>
+        <button class="btn" id="exBtn">Try example maps</button>
+      </div>
+    </div>
+    <div id="drop">Drop .yaml and image files</div>
+  </div>
+  <div class="status"><span id="status">No maps loaded</span><span id="cursor"></span></div>
+</main>
+
+<div id="toast"></div>
+
+<script src="merge.js"></script>
+<script>
+(function () {
+  "use strict";
+  var MM = window.MapMerge;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var entries = [];   // { name, yamlName, info, imageName, map (or null while image missing) }
+  var images = {};    // file name -> decoded image, for yamls added before their image
+  var sel = -1, mode = "merged", result = null, timer = null;
+
+  // ---------- files
+
+  function readAsBuffer(file) { return file.arrayBuffer(); }
+
+  function decodeImage(name, buf) {
+    if (/\.pgm$/i.test(name)) return Promise.resolve(MM.decodePGM(buf));
+    return createImageBitmap(new Blob([buf])).then(function (bmp) {
+      var c = document.createElement("canvas");
+      c.width = bmp.width; c.height = bmp.height;
+      var ctx = c.getContext("2d");
+      ctx.drawImage(bmp, 0, 0);
+      return MM.grayFromRGBA(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
+    });
+  }
+
+  function baseName(p) { return String(p).split(/[\\/]/).pop(); }
+
+  // files: [{ name, buf }]
+  function addFiles(files) {
+    var yamls = [], jobs = [], errors = [];
+    files.forEach(function (f) {
+      if (/\.ya?ml$/i.test(f.name)) yamls.push(f);
+      else jobs.push(decodeImage(f.name, f.buf).then(function (img) { images[f.name] = img; })
+        .catch(function () { errors.push(f.name + ": could not read image"); }));
+    });
+    return Promise.all(jobs).then(function () {
+      yamls.forEach(function (f) {
+        try {
+          var info = MM.parseYaml(new TextDecoder().decode(f.buf));
+          if (!info.image) throw new Error("no image: line");
+          var name = f.name.replace(/\.ya?ml$/i, "");
+          if (entries.some(function (e) { return e.yamlName === f.name; })) return;
+          entries.push({ name: name, yamlName: f.name, info: info, imageName: baseName(info.image), map: null });
+        } catch (e) { errors.push(f.name + ": " + e.message); }
+      });
+      // match yamls with images (also ones added earlier)
+      entries.forEach(function (e) {
+        if (!e.map && images[e.imageName]) {
+          try { e.map = MM.loadMap(e.info, images[e.imageName], e.name); }
+          catch (err) { errors.push(e.yamlName + ": " + err.message); }
+        }
+      });
+      var stray = Object.keys(images).filter(function (n) {
+        return !entries.some(function (e) { return e.imageName === n; });
+      });
+      if (errors.length) toast(errors.join("\n"), true);
+      else if (stray.length && !yamls.length) toast("Got " + stray.join(", ") + ". Now add the matching .yaml file.");
+      if (sel < 0 && entries.length) sel = 0;
+      refresh();
+    });
+  }
+
+  function pickFiles(fileList) {
+    var arr = Array.prototype.slice.call(fileList);
+    Promise.all(arr.map(function (f) {
+      return readAsBuffer(f).then(function (buf) { return { name: f.name, buf: buf }; });
+    })).then(addFiles);
+  }
+
+  function loadExamples() {
+    var names = ["my_map.yaml", "my_map.pgm", "my_map_2.yaml", "my_map_2.pgm"];
+    setStatus("Loading examples…");
+    Promise.all(names.map(function (n) {
+      return fetch("examples/" + n).then(function (r) {
+        if (!r.ok) throw new Error(n + " not found");
+        return r.arrayBuffer();
+      }).then(function (buf) { return { name: n, buf: buf }; });
+    })).then(addFiles).catch(function (e) { toast("Could not load examples: " + e.message, true); });
+  }
+
+  // ---------- list
+
+  function refresh() {
+    var list = $("list");
+    list.innerHTML = "";
+    if (!entries.length) {
+      var li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = "No maps yet";
+      list.appendChild(li);
+    }
+    var ready = 0;
+    entries.forEach(function (e, i) {
+      var li = document.createElement("li");
+      if (i === sel) li.className = "sel";
+      if (!e.map) li.className += " missing";
+      var c = MM.COLORS[i % MM.COLORS.length];
+      var chip = document.createElement("span");
+      chip.className = "chip";
+      chip.style.background = e.map ? "rgb(" + c.join(",") + ")" : "transparent";
+      chip.style.border = e.map ? "0" : "1px dashed #f87171";
+      var text = document.createElement("div");
+      var title = document.createElement("div");
+      title.textContent = e.name + (i === 0 ? "  · reference" : "");
+      var meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = e.map ? e.map.w + "×" + e.map.h + "  ·  " + e.map.res + " m/cell"
+                               : "missing image " + e.imageName + ", add it";
+      text.appendChild(title); text.appendChild(meta);
+      li.appendChild(chip); li.appendChild(text);
+      li.title = e.yamlName + " → " + e.imageName;
+      li.onclick = function () { sel = i; refresh(); };
+      list.appendChild(li);
+      if (e.map) ready++;
+    });
+    $("upBtn").disabled = !(sel > 0);
+    $("downBtn").disabled = !(sel >= 0 && sel < entries.length - 1);
+    $("delBtn").disabled = !(sel >= 0 && sel < entries.length);
+    updateLegend();
+    schedule();
+  }
+
+  function move(d) {
+    var j = sel + d;
+    if (sel < 0 || j < 0 || j >= entries.length) return;
+    var t = entries[sel]; entries[sel] = entries[j]; entries[j] = t;
+    sel = j; refresh();
+  }
+
+  function removeSel() {
+    if (sel < 0) return;
+    entries.splice(sel, 1);
+    sel = Math.min(sel, entries.length - 1);
+    refresh();
+  }
+
+  function readyMaps() { return entries.filter(function (e) { return e.map; }).map(function (e) { return e.map; }); }
+
+  // ---------- merge
+
+  function options() {
+    var res = parseFloat($("optRes").value);
+    var radius = parseInt($("optRadius").value, 10);
+    return {
+      res: res > 0 ? res : null,
+      refine: $("optRefine").checked,
+      keepAllWalls: !$("optOpen").checked,
+      radius: isNaN(radius) ? 3 : Math.max(0, Math.min(20, radius)),
+    };
+  }
+
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(runMerge, 80);
+  }
+
+  function runMerge() {
+    var maps = readyMaps();
+    if (maps.length < 2) {
+      result = null;
+      $("view").style.display = "none";
+      $("empty").style.display = "flex";
+      showStats();
+      setStatus(maps.length ? "1 map loaded, add one more" : (entries.length ? "Waiting for map images" : "No maps loaded"));
+      $("saveBtn").disabled = true;
+      return;
+    }
+    setStatus("Merging…");
+    // let the status paint before the work
+    setTimeout(function () {
+      var first = !result;
+      try {
+        var t = performance.now();
+        result = MM.merge(maps, options());
+        result.ms = Math.round(performance.now() - t);
+      } catch (e) {
+        setStatus("Merge failed: " + e.message);
+        return;
+      }
+      $("empty").style.display = "none";
+      $("view").style.display = "block";
+      draw(first);
+      showStats();
+      setStatus("Merged " + maps.length + " maps in " + result.ms + " ms");
+      $("saveBtn").disabled = false;
+    }, 10);
+  }
+
+  function showStats() {
+    var s = $("stats"), r = result, rows;
+    if (!r) {
+      rows = [["Size", "–"], ["Resolution", "–"], ["Origin", "–"], ["Free / Wall / Unknown", "–"], ["Walls opened", "–"]];
+    } else {
+      var n = r.w * r.h, f = 0, o = 0, u = 0, rem = 0;
+      for (var i = 0; i < n; i++) {
+        var g = r.grid[i];
+        if (g === MM.FREE) f++; else if (g === MM.OCC) o++; else u++;
+        rem += r.removed[i];
+      }
+      rows = [
+        ["Size", r.w + " × " + r.h],
+        ["Resolution", r.res + " m"],
+        ["Origin", r.origin[0].toFixed(2) + ", " + r.origin[1].toFixed(2)],
+        ["Free / Wall / Unknown", Math.round(100 * f / n) + " / " + Math.round(100 * o / n) + " / " + Math.round(100 * u / n) + " %"],
+        ["Walls opened", $("optOpen").checked ? rem + " cells" : "off"],
+      ];
+    }
+    s.innerHTML = "";
+    rows.forEach(function (row) {
+      var a = document.createElement("span"), b = document.createElement("span");
+      a.textContent = row[0]; b.textContent = row[1];
+      a.style.fontFamily = "Inter, 'Segoe UI', Ubuntu, system-ui, sans-serif"; a.style.fontSize = "13px";
+      s.appendChild(a); s.appendChild(b);
+    });
+    $("notes").textContent = r ? r.notes.map(function (x) { return "Refine " + x; }).join("\n") : "";
+  }
+
+  function updateLegend() {
+    var lg = $("legend");
+    lg.innerHTML = "";
+    if (mode !== "overlay") return;
+    var items = [];
+    entries.forEach(function (e, i) { if (e.map) items.push([MM.COLORS[i % MM.COLORS.length], e.name]); });
+    if (items.length < 2) return;
+    items.push([[30, 30, 30], "agree"]);
+    if ($("optOpen").checked) items.push([[46, 204, 113], "opened"]);
+    items.forEach(function (it) {
+      var d = document.createElement("div"), c = document.createElement("span");
+      c.className = "chip";
+      c.style.background = "rgb(" + it[0].join(",") + ")";
+      if (it[1] === "agree") c.style.border = "1px solid #555";
+      d.appendChild(c);
+      d.appendChild(document.createTextNode(it[1]));
+      lg.appendChild(d);
+    });
+  }
+
+  // ---------- canvas view (zoom + pan)
+
+  var view = $("view"), ctx = view.getContext("2d");
+  var mapCanvas = document.createElement("canvas");
+  var cam = { s: 1, x: 0, y: 0 }, userMoved = false;
+
+  function draw(fit) {
+    if (!result) return;
+    mapCanvas.width = result.w; mapCanvas.height = result.h;
+    var data = MM.toRGBA(result, mode === "overlay");
+    mapCanvas.getContext("2d").putImageData(new ImageData(data, result.w, result.h), 0, 0);
+    if (fit) { userMoved = false; fitView(); } else render();
+  }
+
+  function sizeCanvas() {
+    var r = $("stage").getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    view.width = Math.round(r.width * dpr); view.height = Math.round(r.height * dpr);
+  }
+
+  function fitView() {
+    if (!result) return;
+    sizeCanvas();
+    var dpr = window.devicePixelRatio || 1, W = view.width / dpr, H = view.height / dpr;
+    cam.s = Math.min((W - 40) / result.w, (H - 40) / result.h);
+    cam.x = (W - result.w * cam.s) / 2;
+    cam.y = (H - result.h * cam.s) / 2;
+    render();
+  }
+
+  function render() {
+    var dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "#0f1115";
+    ctx.fillRect(0, 0, view.width, view.height);
+    if (!result) return;
+    ctx.imageSmoothingEnabled = false;  // keep cells sharp
+    ctx.setTransform(dpr * cam.s, 0, 0, dpr * cam.s, dpr * cam.x, dpr * cam.y);
+    ctx.drawImage(mapCanvas, 0, 0);
+  }
+
+  function zoomAt(f, px, py) {
+    var s = cam.s * f;
+    if (s < 0.2 || s > 80) return;
+    cam.x = px - (px - cam.x) * f;
+    cam.y = py - (py - cam.y) * f;
+    cam.s = s;
+    userMoved = true;
+    render();
+  }
+
+  function zoomCenter(f) {
+    var r = view.getBoundingClientRect();
+    zoomAt(f, r.width / 2, r.height / 2);
+  }
+
+  view.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    var r = view.getBoundingClientRect();
+    zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX - r.left, e.clientY - r.top);
+  }, { passive: false });
+
+  var drag = null;
+  view.addEventListener("pointerdown", function (e) {
+    drag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y };
+    view.setPointerCapture(e.pointerId);
+    view.classList.add("drag");
+  });
+  view.addEventListener("pointermove", function (e) {
+    if (drag) {
+      cam.x = drag.cx + e.clientX - drag.x;
+      cam.y = drag.cy + e.clientY - drag.y;
+      userMoved = true;
+      render();
+    }
+    showCursor(e);
+  });
+  view.addEventListener("pointerup", function () { drag = null; view.classList.remove("drag"); });
+  view.addEventListener("pointerleave", function () { $("cursor").textContent = ""; });
+
+  function showCursor(e) {
+    if (!result) return;
+    var r = view.getBoundingClientRect();
+    var col = Math.floor((e.clientX - r.left - cam.x) / cam.s);
+    var row = Math.floor((e.clientY - r.top - cam.y) / cam.s);
+    if (col < 0 || row < 0 || col >= result.w || row >= result.h) { $("cursor").textContent = ""; return; }
+    var rb = result.h - 1 - row;
+    var wx = result.origin[0] + (col + 0.5) * result.res, wy = result.origin[1] + (rb + 0.5) * result.res;
+    var g = result.grid[rb * result.w + col];
+    var state = g === MM.FREE ? "free" : g === MM.OCC ? "wall" : "unknown";
+    $("cursor").textContent = "x " + wx.toFixed(2) + " m   y " + wy.toFixed(2) + " m   ·   cell " + col + ", " + rb + "   ·   " + state;
+  }
+
+  window.addEventListener("resize", function () {
+    if (!result) return;
+    if (userMoved) { sizeCanvas(); render(); } else fitView();
+  });
+
+  // ---------- download
+
+  function download(name, data, type) {
+    var url = URL.createObjectURL(new Blob([data], { type: type }));
+    var a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  }
+
+  function save() {
+    if (!result) return;
+    var name = ($("outName").value.trim() || "merged_map").replace(/\.(ya?ml|pgm)$/i, "").replace(/[\\/:*?"<>|]/g, "_");
+    var maps = readyMaps();
+    download(name + ".pgm", MM.toPGM(result), "image/x-portable-graymap");
+    setTimeout(function () {
+      download(name + ".yaml", MM.toYaml(result, name + ".pgm", maps[0].info), "text/yaml");
+    }, 300);
+    setStatus("Downloaded " + name + ".pgm and " + name + ".yaml");
+  }
+
+  // ---------- misc
+
+  var toastTimer;
+  function toast(msg, err) {
+    var t = $("toast");
+    t.textContent = msg;
+    t.className = err ? "err" : "";
+    t.style.display = "block";
+    t.style.whiteSpace = "pre-line";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.style.display = "none"; }, err ? 7000 : 4000);
+  }
+
+  function setStatus(s) { $("status").textContent = s; }
+
+  function setMode(m) {
+    mode = m;
+    $("mMerged").className = m === "merged" ? "on" : "";
+    $("mOverlay").className = m === "overlay" ? "on" : "";
+    updateLegend();
+    draw(false);
+  }
+
+  // ---------- wiring
+
+  $("addBtn").onclick = $("addBtn2").onclick = function () { $("fileIn").click(); };
+  $("fileIn").onchange = function () { pickFiles(this.files); this.value = ""; };
+  $("exBtn").onclick = loadExamples;
+  $("upBtn").onclick = function () { move(-1); };
+  $("downBtn").onclick = function () { move(1); };
+  $("delBtn").onclick = removeSel;
+  $("saveBtn").onclick = save;
+  $("mMerged").onclick = function () { setMode("merged"); };
+  $("mOverlay").onclick = function () { setMode("overlay"); };
+  $("zIn").onclick = function () { zoomCenter(1.25); };
+  $("zOut").onclick = function () { zoomCenter(1 / 1.25); };
+  $("zFit").onclick = function () { userMoved = false; fitView(); };
+  $("optOpen").onchange = function () { $("optRadius").disabled = !this.checked; updateLegend(); schedule(); };
+  $("optRefine").onchange = schedule;
+  $("optRes").oninput = schedule;
+  $("optRadius").oninput = schedule;
+
+  var depth = 0;
+  document.addEventListener("dragenter", function (e) { e.preventDefault(); depth++; document.body.classList.add("dragging"); });
+  document.addEventListener("dragleave", function () { if (--depth <= 0) { depth = 0; document.body.classList.remove("dragging"); } });
+  document.addEventListener("dragover", function (e) { e.preventDefault(); });
+  document.addEventListener("drop", function (e) {
+    e.preventDefault(); depth = 0; document.body.classList.remove("dragging");
+    if (e.dataTransfer.files.length) pickFiles(e.dataTransfer.files);
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") { e.preventDefault(); $("fileIn").click(); }
+  });
+
+  refresh();
+  showStats();
+})();
+</script>
+</body>
+</html>
